@@ -43,56 +43,6 @@
 # Import the general_purpose functions.
 source awsdocs_general.sh
 
-###############################################################################
-# function instance-exists
-#
-# This function checks to see if the specified instance already exists. If it
-# does, it sets two global parameters to return the running state and the
-# instance type.
-#
-# Input parameters:
-#       $1 - The id of the instance to check
-#
-# Returns:
-#       0 if the instance already exists
-#       1 if the instance doesn't exist
-#     AND:
-#       Sets two global variables:
-#            EXISTING_STATE - Contains the running/stopped state of the instance.
-#            EXISTING_TYPE  - Contains the current type of the instance.
-###############################################################################
-function get_instance_info {
-
-    # Declare local variables.
-    local INSTANCE_ID RESPONSE
-
-    # This function accepts a single parameter.
-    INSTANCE_ID=$1
-
-    # The following --filters parameter causes server-side filtering to limit
-    # results to only the records that match the specified ID. The --query
-    # parameter causes CLI client-side filtering to include only the values of
-    # the InstanceType and State.Code fields.
-
-    RESPONSE=$(aws ec2 describe-instances \
-                   --query 'Reservations[*].Instances[*].[State.Name, InstanceType]' \
-                   --filters Name=instance-id,Values="$INSTANCE_ID" \
-                   --output text \
-               )
-
-    if [[ $? -ne 0 ]] || [[ -z "$RESPONSE" ]]; then
-        # There was no response, so no such instance.
-        return 1        # 1 in Bash script means error/false
-    fi
-
-    # If we got a response, the instance exists.
-    # Retrieve the values of interest and set them as global variables.
-    EXISTING_STATE=$(echo "$RESPONSE" | cut -f 1 )
-    EXISTING_TYPE=$(echo "$RESPONSE" | cut -f 2 )
-
-    return 0        # 0 in Bash script means no error/true
-}
-
 ######################################
 #
 #  See header at top of this file
@@ -151,17 +101,30 @@ function get_latest_engine_number {
 
     # 
     echo -n "Confirming existing NE numbers in region $REGION for env $NE_ENV ..."
+    if [[ $VERBOSE == true ]]; then
 
+    RESPONSE=$(aws ec2 describe-instances \
+  --filters Name=tag:Name,Values=*ne* Name=tag:environment,Values=${NE_ENV} \
+  --query "Reservations[*].Instances[*].[InstanceId,Tags[?Key=='Name']|[0].Value,State.Name]" \
+   --output text --region ${REGION}
+              )
+    else
     RESPONSE=$(aws ec2 describe-instances \
   --filters Name=tag:Name,Values=*ne* Name=tag:environment,Values=${NE_ENV} \
   --query "Reservations[*].Instances[*].[InstanceId,Tags[?Key=='Name']|[0].Value,State.Name]" \
    --output text --region ${REGION}|awk '{print $2,$3}'|awk -F'.' '{print $2}'|sort -u
               )
+    fi
     if [[ ${?} -ne 0 ]]; then
         errecho "ERROR - fail to check NE number for env $NE_ENV from $REGION .\n$RESPONSE"
         return 1
     fi
-    echo -e "checking finished.\nNE number: \n${RESPONSE}"
+    echo -e "checking finished...\n"
+    if [[ $VERBOSE == true ]]; then
+    echo -e "Complete NE instance info: \n----------------------------\n${RESPONSE}"|less
+    else
+    echo -e "NE number: \n-------------------------\n${RESPONSE}"
+    fi
 
 }
 
